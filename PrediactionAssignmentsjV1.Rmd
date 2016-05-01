@@ -1,0 +1,177 @@
+---
+title: "Practical Machine Learning - Prediction Assignment"
+author: "Sachin Jahagirdar"
+date: "April 29, 2016"
+output: html_document
+---
+
+## Objective of the Assignment 
+
+The goal of the project is to predict the manner in which people did the exercise. This is the "classe" variable in the training set. Create a report describing how the model is built, how cross validation is used, what is the expected out of sample error, and choices made.
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Exploratory Analysis
+
+Data:
+
+The training data for this project are available at:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available at:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+## Environment Preparation
+
+Set the working directory and prepare the environment needed to build and run the model.
+
+```{r}
+rm(list=ls()) # free up the memory and resources
+#setwd("C:/Sachin Folder/Sachin/Coursera Data Science/Course 8 - Practical Machine Learning/Week 4")
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rattle)
+library(corrplot)
+set.seed(12345)
+```
+
+## Data Loading
+
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+# Create partitions within training data set
+sbsetTrain <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainingDataSet <- training[sbsetTrain, ]
+TestingDataSet <- training[-sbsetTrain, ]
+dim(TrainingDataSet)
+dim(TestingDataSet)
+```
+
+Both created datasets have 160 variables. Those variables have plenty of NA, that can be removed with the cleaning procedures below. The Near Zero variance (NZV) variables are also removed and the ID variables as well.
+
+```{r}
+# remove variables with Nearly Zero Variance
+NZV <- nearZeroVar(TrainingDataSet)
+TrainingDataSet <- TrainingDataSet[, -NZV]
+TestingDataSet  <- TestingDataSet[, -NZV]
+# remove variables that are mostly NA
+AllNA    <- sapply(TrainingDataSet, function(x) mean(is.na(x))) > 0.95
+TrainingDataSet <- TrainingDataSet[, AllNA==FALSE]
+TestingDataSet  <- TestingDataSet[, AllNA==FALSE]
+# remove identification only variables (columns 1 to 5)
+TrainingDataSet <- TrainingDataSet[, -(1:5)]
+TestingDataSet <- TestingDataSet[, -(1:5)]
+dim(TrainingDataSet)
+dim(TestingDataSet)
+
+```
+
+
+
+## Co-relation Analysis
+
+Analysis between variables before prediction modelling
+
+```{r}
+corMatrix <- cor(TrainingDataSet[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower",
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+        
+```
+
+
+The highly correlated variables are shown in dark colors in the graph above. To make an evem more compact analysis, a PCA (Principal Components Analysis) could be performed as pre-processing step to the datasets. Nevertheless, as the correlations are quite few, this step will not be applied for this assignment.
+
+## Predictive Model
+
+Following various methods of predictive modelling will be applied -
+Random Forest
+Decision Tree
+Generalized Boosted Model
+Higher accuracy method will be used for quiz predictions
+
+### Random Forest
+
+```{r}
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=TrainingDataSet, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalMode
+
+# Prediction on Test Data Set
+predictRandForest <- predict(modFitRandForest, newdata=TestingDataSet)
+confMatRandForest <- confusionMatrix(predictRandForest, TestingDataSet$classe)
+confMatRandForest
+
+# Plot of the matrix results
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confMatRandForest$overall['Accuracy'], 4)))
+```
+
+
+### Decision Tree
+
+```{r}
+# model fit
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data=TrainingDataSet, method="class")
+fancyRpartPlot(modFitDecTree)
+
+# prediction on Test dataset
+predictDecTree <- predict(modFitDecTree, newdata=TestingDataSet, type="class")
+confMatDecTree <- confusionMatrix(predictDecTree, TestingDataSet$classe)
+confMatDecTree
+
+# plot matrix results
+plot(confMatDecTree$table, col = confMatDecTree$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confMatDecTree$overall['Accuracy'], 4)))
+
+```
+
+### Generalized Boosted Model
+
+```{r}
+# model fit
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=TrainingDataSet, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+
+# prediction on Test dataset
+predictGBM <- predict(modFitGBM, newdata=TestingDataSet)
+confMatGBM <- confusionMatrix(predictGBM, TestingDataSet$classe)
+confMatGBM
+
+# plot matrix results
+plot(confMatGBM$table, col = confMatGBM$byClass, 
+     main = paste("GBM - Accuracy =", round(confMatGBM$overall['Accuracy'], 4)))
+
+
+```
+
+## Application of Selected Models
+
+Accuracy of 3 selected models is as follows -
+
+Random Forest - 0.9981
+Decision Tree - 0.7308
+Genralized Boosted Model - 0.9859
+
+Applying random forest model
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=testing)
+predictTEST
+```
+ 
